@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<head>
+  <title>Force Fingers</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<div id="force" style="margin-left:auto;margin-right:auto"></div>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="http://js.leapmotion.com/0.2.0/leap.min.js"></script>
+
+<script>
+"use strict";
+
+var color = d3.scale.category20(),
+    width = window.innerWidth * 0.9,
+    height = window.innerHeight * 0.9;
+
+var svg = d3.select("#force").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+var nodes = [
+        {"hand": 0, "finger": -1},
+        {"hand": 0, "finger": 0},
+        {"hand": 0, "finger": 1},
+        {"hand": 0, "finger": 2},
+        {"hand": 0, "finger": 3},
+        {"hand": 0, "finger": 4},
+        {"hand": 1, "finger": -1},
+        {"hand": 1, "finger": 0},
+        {"hand": 1, "finger": 1},
+        {"hand": 1, "finger": 2},
+        {"hand": 1, "finger": 3},
+        {"hand": 1, "finger": 4}
+    ],
+    links = [
+        {"source": 0, "target": 1},
+        {"source": 0, "target": 2},
+        {"source": 0, "target": 3},
+        {"source": 0, "target": 4},
+        {"source": 0, "target": 5},
+        {"source": 6, "target": 7},
+        {"source": 6, "target": 8},
+        {"source": 6, "target": 9},
+        {"source": 6, "target": 10},
+        {"source": 6, "target": 11}
+    ];
+
+var force = d3.layout.force()
+            .size([width, height])
+            .nodes(nodes)
+            .links(links)
+            .linkDistance(200)
+            .charge(-300)
+            .start();
+
+var link = svg.selectAll(".link")
+          .data(links)
+        .enter().append("line")
+          .attr("class", "link")
+          .style("stroke", "#999");
+
+var node = svg.selectAll(".node")
+        .data(nodes)
+      .enter().append("circle")
+        .attr("class", "node")
+        .attr("id", function(d) { return "n" + d.hand + "-" + d.finger; })
+        .attr("r", function(d, i) { return (i == 0 || i == 6) ? 30 : 20; })
+        .style("fill", function(d) { return color(d.hand); })
+        .call(force.drag());
+
+node.append("title")
+    .text(function(d) { return "hand: " + d.hand + ", finger: " + d.finger; });
+
+force.on("tick", function(e) {
+  var k = 30 * e.alpha;
+  nodes.forEach(function(d) {
+    d.x += d.hand & 1 ? k : -k;
+  });
+
+  link.attr("x1", function(d) { return d.source.x; })
+      .attr("y1", function(d) { return d.source.y; })
+      .attr("x2", function(d) { return d.target.x; })
+      .attr("y2", function(d) { return d.target.y; });
+
+  node.attr("cx", function(d) { return d.x; })
+      .attr("cy", function(d) { return d.y; });
+});
+
+var fingers = [], fingerIds = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11];
+
+function findFinger(id) {
+    for(var i = 0; i < fingers.length; i++) {
+        if(fingers[i].id == id) return fingers[i].nodeId;
+    }
+}
+
+function getNext(handId) {
+    var id = 1;
+    var ids = fingers.filter(function(f) {
+        return handId == f.handId;
+    });
+    if(fingers.length > 0 && (ids.length == 0 || ids[0].nodeId > 6)) {
+        id = 7;
+    }
+    for(var i = 0; i < ids.length; i++) {
+        if(ids[i].nodeId != id) {
+            break;
+        }
+        id += 1;
+    }
+    return id;
+}
+
+Leap.loop(function(obj) {
+    var ids = obj.fingers.map(function(d) {
+        var nodeId = findFinger(d.id);
+        if(!nodeId) {
+            nodeId = getNext(d.handId);
+            fingers.push({"id": d.id,
+                          "handId": d.handId,
+                          "nodeId": nodeId});
+        }
+        if(!nodes[nodeId].ix) {
+            nodes[nodeId].ix = nodes[nodeId].x;
+            nodes[nodeId].iy = nodes[nodeId].y;
+        }
+        nodes[nodeId].fixed = true;
+        nodes[nodeId].x = nodes[nodeId].ix + d.stabilizedTipPosition[0];
+        nodes[nodeId].px = nodes[nodeId].x;
+        nodes[nodeId].y = nodes[nodeId].iy - d.stabilizedTipPosition[1];
+        nodes[nodeId].py = nodes[nodeId].y;
+        d3.select("#n" + nodes[nodeId].hand + "-" + nodes[nodeId].finger)
+          .style("fill", color(nodes[nodeId].hand + 5));
+        force.resume();
+        return nodeId;
+    });
+    fingers = fingers.filter(function(f) {
+        var have = ids.indexOf(f.nodeId) != -1;
+        if(!have) {
+            nodes[f.nodeId].fixed = false;
+            nodes[f.nodeId].ix = undefined;
+            nodes[f.nodeId].iy = undefined;
+            d3.select("#n" + nodes[f.nodeId].hand + "-" + nodes[f.nodeId].finger)
+              .style("fill", color(nodes[f.nodeId].hand));
+        }
+        return have;
+    });
+});
+</script>
+</body>
+</html>
