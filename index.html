@@ -14,7 +14,7 @@
 <script>
 "use strict";
 
-var color = d3.scale.category20(),
+var color = d3.scale.category10(),
     width = window.innerWidth * 0.9,
     height = window.innerHeight * 0.9;
 
@@ -116,50 +116,75 @@ function getNext(handId) {
         }
         id += 1;
     }
-    if(id >= nodes.length) { // can have more than 5 fingers on a hand
-        id = nodes.length - 1;
+    if(id == 6 || id == 12) { // can't have more than 5 fingers per hand...
+        id = -1;
     }
     return id;
 }
 
+Array.prototype.unique = function() {
+    var u = {}, a = [];
+    for(var i = 0, l = this.length; i < l; ++i) {
+        if(u.hasOwnProperty(this[i])) {
+            continue;
+        }
+        a.push(this[i]);
+        u[this[i]] = 1;
+    }
+    return a;
+}
+
+function reset(id) {
+    var node = nodes[id];
+    node.fixed = false;
+    node.ix = undefined;
+    node.iy = undefined;
+    d3.select("#n" + node.hand + "-" + node.finger)
+      .style("fill", color(node.hand));
+}
+
 Leap.loop(function(obj) {
     var ids = obj.fingers.map(function(d) {
+        var hands = fingers.map(function(f) { return f.handId; }).unique();
+        if(hands.indexOf(d.handId) == -1 && hands.length == 2) {
+            // don't have more than 2 hands, drop any fingers attached to more
+            return null;
+        }
+
         var finger = findFinger(d.id);
         if(finger && finger.handId != d.handId) {
             // sometimes fingers move between hands
+            reset(finger.nodeId);
             fingers.splice(fingers.indexOf(finger), 1);
             finger = undefined;
         }
         if(!finger) {
-            finger = {"id": d.id, "handId": d.handId, "nodeId": getNext(d.handId)};
+            var next = getNext(d.handId);
+            if(next == -1) {
+                return null;
+            }
+            finger = {"id": d.id, "handId": d.handId, "nodeId": next};
             fingers.push(finger);
+            var node = nodes[next];
+            node.ix = node.x - d.stabilizedTipPosition[0];
+            node.iy = node.y + d.stabilizedTipPosition[1];
+            node.fixed = true;
+            d3.select("#n" + node.hand + "-" + node.finger)
+              .style("fill", color(node.hand + 5));
         }
         var nodeId = finger.nodeId;
-        if(!nodes[nodeId].ix) {
-            nodes[nodeId].ix = nodes[nodeId].x;
-            nodes[nodeId].iy = nodes[nodeId].y;
-        }
-        nodes[nodeId].fixed = true;
         nodes[nodeId].x = nodes[nodeId].ix + d.stabilizedTipPosition[0];
         nodes[nodeId].px = nodes[nodeId].x;
         nodes[nodeId].y = nodes[nodeId].iy - d.stabilizedTipPosition[1];
         nodes[nodeId].py = nodes[nodeId].y;
-        d3.select("#n" + nodes[nodeId].hand + "-" + nodes[nodeId].finger)
-          .style("fill", color(nodes[nodeId].hand + 5));
         return nodeId;
-    });
+    }).filter(function(d) { return d != null; });
     if(ids.length > 0) {
         force.resume();
     }
     fingers = fingers.filter(function(f) {
         var have = ids.indexOf(f.nodeId) != -1;
-        if(!have) {
-            nodes[f.nodeId].fixed = false;
-            nodes[f.nodeId].ix = undefined;
-            nodes[f.nodeId].iy = undefined;
-            d3.select("#n" + nodes[f.nodeId].hand + "-" + nodes[f.nodeId].finger)
-              .style("fill", color(nodes[f.nodeId].hand));
-        }
+        if(!have) { reset(f.nodeId); }
         return have;
     });
 });
