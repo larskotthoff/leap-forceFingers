@@ -90,40 +90,51 @@ force.on("tick", function(e) {
       .attr("cy", function(d) { return d.y; });
 });
 
-var fingers = [], fingerIds = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11];
+var fingers = [];
 
 function findFinger(id) {
     for(var i = 0; i < fingers.length; i++) {
-        if(fingers[i].id == id) return fingers[i].nodeId;
+        if(fingers[i].id == id) return fingers[i];
     }
 }
 
 function getNext(handId) {
     var id = 1;
-    var ids = fingers.filter(function(f) {
+    var handFingers = fingers.filter(function(f) {
         return handId == f.handId;
     });
-    if(fingers.length > 0 && (ids.length == 0 || ids[0].nodeId > 6)) {
+    if(fingers.length > 0 &&
+        ((handFingers.length == 0 && fingers[0].nodeId < 6) ||
+         (handFingers.length > 0 && handFingers[0].nodeId > 6))) {
         id = 7;
     }
-    for(var i = 0; i < ids.length; i++) {
-        if(ids[i].nodeId != id) {
+    var taken = handFingers.map(function(d) { return d.nodeId; })
+                    .sort(function(a, b) { return a-b; });
+    for(var i = 0; i < taken.length; i++) {
+        if(taken[i] != id) {
             break;
         }
         id += 1;
+    }
+    if(id >= nodes.length) { // can have more than 5 fingers on a hand
+        id = nodes.length - 1;
     }
     return id;
 }
 
 Leap.loop(function(obj) {
     var ids = obj.fingers.map(function(d) {
-        var nodeId = findFinger(d.id);
-        if(!nodeId) {
-            nodeId = getNext(d.handId);
-            fingers.push({"id": d.id,
-                          "handId": d.handId,
-                          "nodeId": nodeId});
+        var finger = findFinger(d.id);
+        if(finger && finger.handId != d.handId) {
+            // sometimes fingers move between hands
+            fingers.splice(fingers.indexOf(finger), 1);
+            finger = undefined;
         }
+        if(!finger) {
+            finger = {"id": d.id, "handId": d.handId, "nodeId": getNext(d.handId)};
+            fingers.push(finger);
+        }
+        var nodeId = finger.nodeId;
         if(!nodes[nodeId].ix) {
             nodes[nodeId].ix = nodes[nodeId].x;
             nodes[nodeId].iy = nodes[nodeId].y;
@@ -135,9 +146,11 @@ Leap.loop(function(obj) {
         nodes[nodeId].py = nodes[nodeId].y;
         d3.select("#n" + nodes[nodeId].hand + "-" + nodes[nodeId].finger)
           .style("fill", color(nodes[nodeId].hand + 5));
-        force.resume();
         return nodeId;
     });
+    if(ids.length > 0) {
+        force.resume();
+    }
     fingers = fingers.filter(function(f) {
         var have = ids.indexOf(f.nodeId) != -1;
         if(!have) {
